@@ -35,6 +35,9 @@
 #define AUTH_REJECT_OPT_KEY "auth.addr.*.reject"
 #define NFS_DISABLE_OPT_KEY "nfs.*.disable"
 
+#define SSL_CERT_DEPTH_OPT  "ssl.certificate-depth"
+#define SSL_CIPHER_LIST_OPT "ssl.cipher-list"
+
 
 typedef enum {
         GF_CLIENT_TRUSTED,
@@ -114,6 +117,8 @@ struct volopt_map_entry {
 int glusterd_create_rb_volfiles (glusterd_volinfo_t *volinfo,
                                  glusterd_brickinfo_t *brickinfo);
 
+int glusterd_create_volfiles (glusterd_volinfo_t *volinfo);
+
 int glusterd_create_volfiles_and_notify_services (glusterd_volinfo_t *volinfo);
 
 void glusterd_get_nfs_filepath (char *filename);
@@ -123,6 +128,7 @@ void glusterd_get_shd_filepath (char *filename);
 int glusterd_create_nfs_volfile ();
 int glusterd_create_shd_volfile ();
 int glusterd_create_quotad_volfile ();
+int glusterd_create_snapd_volfile (glusterd_volinfo_t *volinfo);
 
 int glusterd_delete_volfile (glusterd_volinfo_t *volinfo,
                              glusterd_brickinfo_t *brickinfo);
@@ -172,7 +178,4 @@ gd_is_xlator_option (char *key);
 gf_boolean_t
 gd_is_boolean_option (char *key);
 
-int gd_restore_snap_volume (dict_t *rsp_dict,
-                            glusterd_volinfo_t *orig_vol,
-                            glusterd_volinfo_t *snap_vol);
 #endif

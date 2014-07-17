@@ -15,6 +15,8 @@
 
 #ifdef HAVE_BACKTRACE
 #include <execinfo.h>
+#else
+#include "execinfo_compat.h"
 #endif
 
 #include <stdio.h>
@@ -33,7 +35,7 @@
 #include <signal.h>
 #include <assert.h>
 
-#if defined GF_BSD_HOST_OS || defined GF_DARWIN_HOST_OS
+#if defined(GF_BSD_HOST_OS) || defined(GF_DARWIN_HOST_OS)
 #include <sys/sysctl.h>
 #endif
 
@@ -80,7 +82,9 @@ mkdir_p (char *path, mode_t mode, gf_boolean_t allow_symlinks)
         char            dir[PATH_MAX]   = {0,};
         struct stat     stbuf           = {0,};
 
-        strcpy (dir, path);
+        strncpy (dir, path, (PATH_MAX - 1));
+        dir[PATH_MAX - 1] = '\0';
+
         i = (dir[0] == '/')? 1: 0;
         do {
                 if (path[i] != '/' && path[i] != '\0')
@@ -488,6 +492,9 @@ gf_print_trace (int32_t signum, glusterfs_ctx_t *ctx)
          * which helps in debugging.
          */
         gf_log_flush();
+
+        gf_log_disable_suppression_before_exit (ctx);
+
         /* Pending frames, (if any), list them in order */
         gf_msg_plain_nomem (GF_LOG_ALERT, "pending frames:");
         {
@@ -526,11 +533,9 @@ gf_print_trace (int32_t signum, glusterfs_ctx_t *ctx)
         }
 
         gf_dump_config_flags ();
-#if HAVE_BACKTRACE
         gf_msg_backtrace_nomem (GF_LOG_ALERT, 200);
         sprintf (msg, "---------");
         gf_msg_plain_nomem (GF_LOG_ALERT, msg);
-#endif /* HAVE_BACKTRACE */
 
         /* Send a signal to terminate the process */
         signal (signum, SIG_DFL);
@@ -1170,7 +1175,7 @@ gf_string2uint8 (const char *str, uint8_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT8_MAX) {
+        if (l <= UINT8_MAX) {
                 *n = (uint8_t) l;
                 return 0;
         }
@@ -1189,7 +1194,7 @@ gf_string2uint16 (const char *str, uint16_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT16_MAX) {
+        if (l <= UINT16_MAX) {
                 *n = (uint16_t) l;
                 return 0;
         }
@@ -1208,7 +1213,7 @@ gf_string2uint32 (const char *str, uint32_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT32_MAX) {
+	if (l <= UINT32_MAX) {
                 *n = (uint32_t) l;
                 return 0;
         }
@@ -1227,7 +1232,7 @@ gf_string2uint64 (const char *str, uint64_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT64_MAX) {
+        if (l <= UINT64_MAX) {
                 *n = (uint64_t) l;
                 return 0;
         }
@@ -1258,7 +1263,7 @@ gf_string2uint8_base10 (const char *str, uint8_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT8_MAX) {
+        if (l <= UINT8_MAX) {
                 *n = (uint8_t) l;
                 return 0;
         }
@@ -1277,7 +1282,7 @@ gf_string2uint16_base10 (const char *str, uint16_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT16_MAX) {
+        if (l <= UINT16_MAX) {
                 *n = (uint16_t) l;
                 return 0;
         }
@@ -1296,7 +1301,7 @@ gf_string2uint32_base10 (const char *str, uint32_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT32_MAX) {
+        if (l <= UINT32_MAX) {
                 *n = (uint32_t) l;
                 return 0;
         }
@@ -1315,7 +1320,7 @@ gf_string2uint64_base10 (const char *str, uint64_t *n)
         if (rv != 0)
                 return rv;
 
-        if (l >= 0 && l <= UINT64_MAX) {
+        if (l <= UINT64_MAX) {
                 *n = (uint64_t) l;
                 return 0;
         }
@@ -1361,7 +1366,7 @@ err:
 }
 
 int
-gf_string2bytesize (const char *str, uint64_t *n)
+gf_string2bytesize_range (const char *str, uint64_t *n, uint64_t max)
 {
         double value = 0.0;
         char *tail = NULL;
@@ -1410,7 +1415,7 @@ gf_string2bytesize (const char *str, uint64_t *n)
                         return -1;
         }
 
-        if ((UINT64_MAX - value) < 0) {
+        if ((max - value) < 0) {
                 errno = ERANGE;
                 return -1;
         }
@@ -1418,6 +1423,28 @@ gf_string2bytesize (const char *str, uint64_t *n)
         *n = (uint64_t) value;
 
         return 0;
+}
+
+int
+gf_string2bytesize_size (const char *str, size_t *n)
+{
+        uint64_t u64;
+        size_t max = (size_t) - 1;
+        int val = gf_string2bytesize_range (str, &u64, max);
+        *n = (size_t) u64;
+        return val;
+}
+
+int
+gf_string2bytesize (const char *str, uint64_t *n)
+{
+        return gf_string2bytesize_range(str, n, UINT64_MAX);
+}
+
+int
+gf_string2bytesize_uint64 (const char *str, uint64_t *n)
+{
+        return gf_string2bytesize_range(str, n, UINT64_MAX);
 }
 
 int
@@ -1858,6 +1885,70 @@ out:
         return ret;
 }
 
+/**
+ * valid_ipv4_subnetwork() takes the pattern and checks if it contains
+ * a valid ipv4 subnetwork pattern i.e. xx.xx.xx.xx/n. IPv4 address
+ * part (xx.xx.xx.xx) and mask bits lengh part (n). The mask bits lengh
+ * must be in 0-32 range (ipv4 addr is 32 bit). The pattern must be
+ * in this format.
+ *
+ * Returns _gf_true if both IP addr and mask bits len are valid
+ *         _gf_false otherwise.
+ */
+gf_boolean_t
+valid_ipv4_subnetwork (const char *address)
+{
+        char         *slash     = NULL;
+        char         *paddr     = NULL;
+        char         *endptr    = NULL;
+        long         prefixlen  = -1;
+        gf_boolean_t retv       = _gf_true;
+
+        if (address == NULL) {
+                gf_log_callingfn (THIS->name, GF_LOG_WARNING,
+                                              "argument invalid");
+                return _gf_false;
+        }
+
+        paddr = gf_strdup (address);
+        if (paddr == NULL) /* ENOMEM */
+                return _gf_false;
+
+        /*
+         * INVALID: If '/' is not present OR
+         *          Nothing specified after '/'
+         */
+        slash = strchr(paddr, '/');
+        if ((slash == NULL) || (slash[1] == '\0')) {
+                gf_log_callingfn (THIS->name, GF_LOG_WARNING,
+                                  "Invalid IPv4 subnetwork format");
+                retv = _gf_false;
+                goto out;
+        }
+
+        *slash = '\0';
+        retv = valid_ipv4_address (paddr, strlen(paddr), _gf_false);
+        if (retv == _gf_false) {
+                gf_log_callingfn (THIS->name, GF_LOG_WARNING,
+                                  "Invalid IPv4 subnetwork address");
+                goto out;
+        }
+
+        prefixlen = strtol (slash + 1, &endptr, 10);
+        if ((errno != 0) || (*endptr != '\0') ||
+            (prefixlen < 0) || (prefixlen > IPv4_ADDR_SIZE)) {
+                gf_log_callingfn (THIS->name, GF_LOG_WARNING,
+                                  "Invalid IPv4 subnetwork mask");
+                retv = _gf_false;
+                goto out;
+        }
+
+        retv = _gf_true;
+out:
+        GF_FREE (paddr);
+        return retv;
+}
+
 char
 valid_ipv6_address (char *address, int length, gf_boolean_t wildcard_acc)
 {
@@ -1939,6 +2030,65 @@ out:
 }
 
 /**
+ * valid_mount_auth_address - Validate the rpc-auth.addr.allow/reject pattern
+ *
+ * @param address - Pattern to be validated
+ *
+ * @return _gf_true if "address" is "*" (anonymous) 'OR'
+ *                  if "address" is valid FQDN or valid IPv4/6 address 'OR'
+ *                  if "address" contains wildcard chars e.g. "'*' or '?' or '['"
+ *                  if "address" is valid ipv4 subnet pattern (xx.xx.xx.xx/n)
+ *         _gf_false otherwise
+ *
+ *
+ * NB: If the user/admin set for wildcard pattern, then it does not have
+ *     to be validated. Make it similar to the way exportfs (kNFS) works.
+ */
+gf_boolean_t
+valid_mount_auth_address (char *address)
+{
+        int    length = 0;
+        char   *cp    = NULL;
+
+        /* 1. Check for "NULL and empty string */
+        if ((address == NULL) || (address[0] == '\0')){
+                gf_log_callingfn (THIS->name,
+                                  GF_LOG_WARNING, "argument invalid");
+                return _gf_false;
+        }
+
+        /* 2. Check for Anonymous */
+        if (strcmp(address, "*") == 0)
+                return _gf_true;
+
+        for (cp = address; *cp; cp++) {
+                /* 3. Check for wildcard pattern */
+                if (*cp == '*' || *cp == '?' || *cp == '[') {
+                        return _gf_true;
+                }
+
+                /*
+                 * 4. check for IPv4 subnetwork i.e. xx.xx.xx.xx/n
+                 * TODO: check for IPv6 subnetwork
+                 * NB: Wildcard must not be mixed with subnetwork.
+                 */
+                if (*cp == '/') {
+                        return valid_ipv4_subnetwork (address);
+                }
+        }
+
+        /* 5. Check for v4/v6 IP addr and FQDN/hostname */
+        length = strlen (address);
+        if ((valid_ipv4_address (address, length, _gf_false)) ||
+            (valid_ipv6_address (address, length, _gf_false)) ||
+            (valid_host_name (address, length))) {
+                return _gf_true;
+        }
+
+        return _gf_false;
+}
+
+/**
  * gf_sock_union_equal_addr - check if two given gf_sock_unions have same addr
  *
  * @param a - first sock union
@@ -1981,6 +2131,23 @@ gf_sock_union_equal_addr (union gf_sock_union *a,
 
         return _gf_false;
 }
+
+/*
+ * Check if both have same network address.
+ * Extract the network address from the sockaddr(s) addr by applying the
+ * network mask. If they match, return boolean _gf_true, _gf_false otherwise.
+ *
+ * (x == y) <=> (x ^ y == 0)
+ * (x & y) ^ (x & z) <=> x & (y ^ z)
+ *
+ * ((ip1 & mask) == (ip2 & mask)) <=> ((mask & (ip1 ^ ip2)) == 0)
+ */
+gf_boolean_t
+mask_match(const uint32_t a, const uint32_t b, const uint32_t m)
+{
+        return (((a ^ b) & m) == 0);
+}
+
 
 /*Thread safe conversion function*/
 char *
@@ -2300,14 +2467,16 @@ static const char *__gf_timefmts[] = {
         "%F %T",
         "%Y/%m/%d-%T",
         "%b %d %T",
-        "%F %H%M%S"
+        "%F %H%M%S",
+	"%Y-%m-%d-%T",
 };
 
 static const char *__gf_zerotimes[] = {
         "0000-00-00 00:00:00",
         "0000/00/00-00:00:00",
         "xxx 00 00:00:00",
-        "0000-00-00 000000"
+        "0000-00-00 000000",
+	"0000-00-00-00:00:00",
 };
 
 void
@@ -2893,82 +3062,29 @@ gf_set_log_ident (cmd_args_t *cmd_args)
 
 int
 gf_thread_create (pthread_t *thread, const pthread_attr_t *attr,
-		  void *(*start_routine)(void *), void *arg)
+                  void *(*start_routine)(void *), void *arg)
 {
-	sigset_t set, old;
-	int ret;
+        sigset_t set, old;
+        int ret;
 
-	sigemptyset (&set);
+        sigemptyset (&set);
 
-	sigfillset (&set);
-	sigdelset (&set, SIGSEGV);
-	sigdelset (&set, SIGBUS);
-	sigdelset (&set, SIGILL);
-	sigdelset (&set, SIGSYS);
-	sigdelset (&set, SIGFPE);
-	sigdelset (&set, SIGABRT);
+        sigfillset (&set);
+        sigdelset (&set, SIGSEGV);
+        sigdelset (&set, SIGBUS);
+        sigdelset (&set, SIGILL);
+        sigdelset (&set, SIGSYS);
+        sigdelset (&set, SIGFPE);
+        sigdelset (&set, SIGABRT);
 
-	pthread_sigmask (SIG_BLOCK, &set, &old);
+        pthread_sigmask (SIG_BLOCK, &set, &old);
 
-	ret = pthread_create (thread, attr, start_routine, arg);
+        ret = pthread_create (thread, attr, start_routine, arg);
 
-	pthread_sigmask (SIG_SETMASK, &old, NULL);
+        pthread_sigmask (SIG_SETMASK, &old, NULL);
 
-	return ret;
+        return ret;
 }
-
-#ifdef __NetBSD__
-#ifdef __MACHINE_STACK_GROWS_UP
-#define BELOW >
-#else
-#define BELOW <
-#endif
-
-struct frameinfo {
-	struct frameinfo *next;
-	void *return_address;
-};
-
-size_t
-backtrace(void **trace, size_t len)
-{
-	const struct frameinfo *frame = __builtin_frame_address(0);
-	void *stack = &stack;
-	size_t i;
-
-	for (i = 0; i < len; i++) {
-		if ((void *)frame BELOW stack)
-			return i;
-		trace[i] = frame->return_address;
-		frame = frame->next;
-	}
-
-	return len;
-}
-
-char **
-backtrace_symbols(void *const *trace, size_t len)
-{
-	static const size_t slen = sizeof("0x123456789abcdef");
-	char **ptr = calloc(len, sizeof(*ptr) + slen);
-	size_t i;
-
-	if (ptr == NULL)
-		return NULL;
-
-	char *str = (void *)(ptr + len);
-	size_t cur = 0, left = len * slen;
-
-	for (i = 0; i < len; i++) {
-		ptr[i] = str + cur;
-		cur += snprintf(str + cur, left - cur, "%p", trace[i]) + 1;
-		assert(cur < left);
-	}
-
-	return ptr;
-}
-#undef BELOW
-#endif /* __NetBSD__ */
 
 int
 gf_skip_header_section (int fd, int header_len)
@@ -3082,4 +3198,37 @@ gf_check_logger (const char *value)
                         GF_LOGGER_GLUSTER_LOG "|" GF_LOGGER_SYSLOG);
 
         return logger;
+}
+
+/* gf_compare_sockaddr compares the given addresses @addr1 and @addr2 for
+ * equality, ie. if they both refer to the same address.
+ *
+ * This was inspired by sock_addr_cmp_addr() from
+ * https://www.opensource.apple.com/source/postfix/postfix-197/postfix/src/util/sock_addr.c
+ */
+gf_boolean_t
+gf_compare_sockaddr (const struct sockaddr *addr1,
+                     const struct sockaddr *addr2)
+{
+        GF_ASSERT (addr1 != NULL);
+        GF_ASSERT (addr2 != NULL);
+
+        /* Obviously, the addresses don't match if their families are different
+         */
+        if (addr1->sa_family != addr2->sa_family)
+                return _gf_false;
+
+
+        if (AF_INET == addr1->sa_family) {
+                if (((struct sockaddr_in *)addr1)->sin_addr.s_addr ==
+                       ((struct sockaddr_in *)addr2)->sin_addr.s_addr)
+                        return _gf_true;
+
+        } else if (AF_INET6 == addr1->sa_family) {
+                if (memcmp ((char *)&((struct sockaddr_in6 *)addr1)->sin6_addr,
+                            (char *)&((struct sockaddr_in6 *)addr2)->sin6_addr,
+                            sizeof (struct in6_addr)) == 0)
+                        return _gf_true;
+        }
+        return _gf_false;
 }

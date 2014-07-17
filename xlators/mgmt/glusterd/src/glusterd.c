@@ -30,6 +30,7 @@
 #include "dict.h"
 #include "compat.h"
 #include "compat-errno.h"
+#include "syscall.h"
 #include "statedump.h"
 #include "glusterd-sm.h"
 #include "glusterd-op-sm.h"
@@ -39,6 +40,7 @@
 #include "glusterd-locks.h"
 #include "common-utils.h"
 #include "run.h"
+#include "rpc-clnt-ping.h"
 
 #include "syncop.h"
 
@@ -52,7 +54,7 @@ extern struct rpcsvc_program gd_svc_mgmt_prog;
 extern struct rpcsvc_program gd_svc_mgmt_v3_prog;
 extern struct rpcsvc_program gd_svc_peer_prog;
 extern struct rpcsvc_program gd_svc_cli_prog;
-extern struct rpcsvc_program gd_svc_cli_prog_ro;
+extern struct rpcsvc_program gd_svc_cli_trusted_progs;
 extern struct rpc_clnt_program gd_brick_prog;
 extern struct rpcsvc_program glusterd_mgmt_hndsk_prog;
 
@@ -66,7 +68,7 @@ rpcsvc_cbk_program_t glusterd_cbk_prog = {
 
 struct rpcsvc_program *gd_inet_programs[] = {
         &gd_svc_peer_prog,
-        &gd_svc_cli_prog_ro,
+        &gd_svc_cli_trusted_progs, /* Must be index 1 for secure_mgmt! */
         &gd_svc_mgmt_prog,
         &gd_svc_mgmt_v3_prog,
         &gluster_pmap_prog,
@@ -197,20 +199,32 @@ glusterd_options_init (xlator_t *this)
                 goto out;
 
         ret = glusterd_store_retrieve_options (this);
-        if (ret == 0)
-                goto out;
+        if (ret == 0) {
+                goto set;
+        }
 
         ret = dict_set_str (priv->opts, GLUSTERD_GLOBAL_OPT_VERSION,
                             initial_version);
         if (ret)
                 goto out;
+
         ret = glusterd_store_options (this, priv->opts);
         if (ret) {
                 gf_log (this->name, GF_LOG_ERROR, "Unable to store version");
                 return ret;
         }
-out:
 
+set:
+        if (priv->op_version >= GD_OP_VERSION_3_6_0) {
+                ret = glusterd_check_and_set_config_limit (priv);
+                if (ret) {
+                        gf_log (this->name, GF_LOG_ERROR, "Failed "
+                                "to set config limit in options");
+                        return ret;
+                }
+        }
+
+out:
         return 0;
 }
 int
@@ -311,7 +325,7 @@ out:
 }
 
 
-inline int32_t
+static inline int32_t
 glusterd_program_register (xlator_t *this, rpcsvc_t *svc,
                            rpcsvc_program_t *prog)
 {
@@ -804,7 +818,7 @@ check_prepare_mountbroker_root (char *mountbroker_root)
         dfd0 = dup (dfd);
 
         for (;;) {
-                ret = openat (dfd, "..", O_RDONLY);
+                ret = sys_openat (dfd, "..", O_RDONLY);
                 if (ret != -1) {
                         dfd2 = ret;
                         ret = fstat (dfd2, &st2);
@@ -839,11 +853,11 @@ check_prepare_mountbroker_root (char *mountbroker_root)
                 st = st2;
         }
 
-        ret = mkdirat (dfd0, MB_HIVE, 0711);
+        ret = sys_mkdirat (dfd0, MB_HIVE, 0711);
         if (ret == -1 && errno == EEXIST)
                 ret = 0;
         if (ret != -1)
-                ret = fstatat (dfd0, MB_HIVE, &st, AT_SYMLINK_NOFOLLOW);
+                ret = sys_fstatat (dfd0, MB_HIVE, &st, AT_SYMLINK_NOFOLLOW);
         if (ret == -1 || st.st_mode != (S_IFDIR|0711)) {
                 gf_log ("", GF_LOG_ERROR,
                         "failed to set up mountbroker-root directory %s",
@@ -951,32 +965,6 @@ _install_mount_spec (dict_t *opts, char *key, data_t *value, void *data)
         return -1;
 }
 
-
-static int
-gd_default_synctask_cbk (int ret, call_frame_t *frame, void *opaque)
-{
-        glusterd_conf_t     *priv = THIS->private;
-        synclock_unlock (&priv->big_lock);
-        return ret;
-}
-
-static void
-glusterd_launch_synctask (synctask_fn_t fn, void *opaque)
-{
-        xlator_t        *this = NULL;
-        glusterd_conf_t *priv = NULL;
-        int             ret   = -1;
-
-        this = THIS;
-        priv = this->private;
-
-        synclock_lock (&priv->big_lock);
-        ret = synctask_new (this->ctx->env, fn, gd_default_synctask_cbk, NULL,
-                            opaque);
-        if (ret)
-                gf_log (this->name, GF_LOG_CRITICAL, "Failed to spawn bricks"
-                        " and other volume related services");
-}
 
 int
 glusterd_uds_rpcsvc_notify (rpcsvc_t *rpc, void *xl, rpcsvc_event_t event,
@@ -1145,7 +1133,7 @@ glusterd_init_snap_folder (xlator_t *this)
 
         if ((-1 == ret) && (ENOENT == errno)) {
                 /* Create missing folders */
-                ret = mkdir_p (snap_mount_folder, 0777, _gf_false);
+                ret = mkdir_p (snap_mount_folder, 0777, _gf_true);
 
                 if (-1 == ret) {
                         gf_log (this->name, GF_LOG_CRITICAL,
@@ -1210,7 +1198,7 @@ init (xlator_t *this)
 
 
         if ((-1 == ret) && (ENOENT == errno)) {
-                ret = mkdir (workdir, 0777);
+                ret = mkdir_p (workdir, 0777, _gf_true);
 
                 if (-1 == ret) {
                         gf_log (this->name, GF_LOG_CRITICAL,
@@ -1251,6 +1239,17 @@ init (xlator_t *this)
         if ((-1 == ret) && (errno != EEXIST)) {
                 gf_log (this->name, GF_LOG_CRITICAL,
                         "Unable to create volume directory %s"
+                        " ,errno = %d", storedir, errno);
+                exit (1);
+        }
+
+        snprintf (storedir, PATH_MAX, "%s/snaps", workdir);
+
+        ret = mkdir (storedir, 0777);
+
+        if ((-1 == ret) && (errno != EEXIST)) {
+                gf_log (this->name, GF_LOG_CRITICAL,
+                        "Unable to create snaps directory %s"
                         " ,errno = %d", storedir, errno);
                 exit (1);
         }
@@ -1328,8 +1327,34 @@ init (xlator_t *this)
                 goto out;
         }
 
+        if (this->ctx->secure_mgmt) {
+                /*
+                 * The socket code will turn on SSL based on the same check,
+                 * but that will by default turn on own-thread as well and
+                 * we're not multi-threaded enough to handle that.  Thus, we
+                 * override the value here.
+                 */
+                ret = dict_set_str (this->options,
+                                    "transport.socket.own-thread", "off");
+                if (ret != 0) {
+                        gf_log (this->name, GF_LOG_ERROR,
+                                "failed to clear own-thread");
+                        goto out;
+                }
+                /*
+                 * With strong authentication, we can afford to allow
+                 * privileged operations over TCP.
+                 */
+                gd_inet_programs[1] = &gd_svc_cli_prog;
+                /*
+                 * This is the only place where we want secure_srvr to reflect
+                 * the management-plane setting.
+                 */
+                this->ctx->secure_srvr = MGMT_SSL_ALWAYS;
+        }
+
         /*
-         * only one (atmost a pair - rdma and socket) listener for
+         * only one (at most a pair - rdma and socket) listener for
          * glusterd1_mop_prog, gluster_pmap_prog and gluster_handshake_prog.
          */
         ret = rpcsvc_create_listeners (rpc, this->options, this->name);
@@ -1353,9 +1378,10 @@ init (xlator_t *this)
                 }
         }
 
-        /* Start a unix domain socket listener just for cli commands
-         * This should prevent ports from being wasted by being in TIMED_WAIT
-         * when cli commands are done continuously
+        /*
+         * Start a unix domain socket listener just for cli commands This
+         * should prevent ports from being wasted by being in TIMED_WAIT when
+         * cli commands are done continuously
          */
         uds_rpc = glusterd_init_uds_listener (this);
         if (uds_rpc == NULL) {
@@ -1635,6 +1661,12 @@ struct volume_options options[] = {
         { .key = {"snap-brick-path"},
           .type = GF_OPTION_TYPE_STR,
           .description = "directory where the bricks for the snapshots will be created"
+        },
+        { .key  = {"ping-timeout"},
+          .type = GF_OPTION_TYPE_TIME,
+          .min  = 0,
+          .max  = 300,
+          .default_value = TOSTRING(RPC_DEFAULT_PING_TIMEOUT),
         },
         { .key   = {NULL} },
 };

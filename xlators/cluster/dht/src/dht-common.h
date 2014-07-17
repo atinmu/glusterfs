@@ -17,6 +17,7 @@
 #include <signal.h>
 
 #include "dht-mem-types.h"
+#include "dht-messages.h"
 #include "libxlator.h"
 #include "syncop.h"
 
@@ -47,7 +48,7 @@ struct dht_layout {
         int                gen;
         int                type;
         int                ref; /* use with dht_conf_t->layout_lock */
-        int                search_unhashed;
+        gf_boolean_t       search_unhashed;
         struct {
                 int        err;   /* 0 = normal
                                      -1 = dir exists and no xattr
@@ -98,6 +99,17 @@ struct dht_rebalance_ {
         dht_defrag_cbk_fn_t  target_op_fn;
         dict_t              *xdata;
 };
+
+/**
+ * Enum to store decided action based on the qdstatfs (quota-deem-statfs)
+ * events
+ **/
+typedef enum {
+        qdstatfs_action_OFF = 0,
+        qdstatfs_action_REPLACE,
+        qdstatfs_action_NEGLECT,
+        qdstatfs_action_COMPARE,
+} qdstatfs_action_t;
 
 struct dht_local {
         int                      call_cnt;
@@ -186,6 +198,7 @@ struct dht_local {
         struct dht_rebalance_ rebalance;
         xlator_t        *first_up_subvol;
 
+        gf_boolean_t     quota_deem_statfs;
 };
 typedef struct dht_local dht_local_t;
 
@@ -195,6 +208,7 @@ struct dht_du {
 	double   avail_inodes;
         uint64_t avail_space;
         uint32_t log;
+        uint32_t chunks;
 };
 typedef struct dht_du dht_du_t;
 
@@ -263,7 +277,7 @@ struct dht_conf {
         int            gen;
         dht_du_t      *du_stats;
         double         min_free_disk;
-	double         min_free_inodes;
+        double         min_free_inodes;
         char           disk_unit;
         int32_t        refresh_interval;
         gf_boolean_t   unhashed_sticky_bit;
@@ -302,6 +316,10 @@ struct dht_conf {
         char            *xattr_name;
         char            *link_xattr_name;
         char            *wild_xattr_name;
+
+        /* Support size-weighted rebalancing (heterogeneous bricks). */
+        gf_boolean_t    do_weighting;
+        gf_boolean_t    randomize_by_gfid;
 };
 typedef struct dht_conf dht_conf_t;
 
@@ -454,6 +472,12 @@ int                                       dht_lookup_everywhere (call_frame_t *f
 int
 dht_selfheal_directory (call_frame_t     *frame, dht_selfheal_dir_cbk_t cbk,
                         loc_t            *loc, dht_layout_t *layout);
+
+int
+dht_selfheal_directory_for_nameless_lookup (call_frame_t  *frame,
+                                            dht_selfheal_dir_cbk_t cbk,
+                                            loc_t  *loc, dht_layout_t *layout);
+
 int
 dht_selfheal_new_directory (call_frame_t *frame, dht_selfheal_dir_cbk_t cbk,
                             dht_layout_t *layout);
@@ -753,6 +777,7 @@ dht_inode_ctx_layout_set (inode_t *inode, xlator_t *this,
 int
 dht_inode_ctx_time_update (inode_t *inode, xlator_t *this, struct iatt *stat,
                            int32_t update_ctx);
+void dht_inode_ctx_time_set (inode_t *inode, xlator_t *this, struct iatt *stat);
 
 int dht_inode_ctx_get (inode_t *inode, xlator_t *this, dht_inode_ctx_t **ctx);
 int dht_inode_ctx_set (inode_t *inode, xlator_t *this, dht_inode_ctx_t *ctx);
@@ -783,4 +808,10 @@ dht_inodectx_dump (xlator_t *this, inode_t *inode);
 int
 dht_inode_ctx_get1 (xlator_t *this, inode_t *inode, xlator_t **subvol);
 
+int
+dht_subvol_status (dht_conf_t *conf, xlator_t *subvol);
+
+void
+dht_log_new_layout_for_dir_selfheal (xlator_t *this, loc_t *loc,
+                                     dht_layout_t *layout);
 #endif/* _DHT_H */

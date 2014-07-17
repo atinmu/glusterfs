@@ -19,11 +19,13 @@
 #include "glusterd-locks.h"
 #include "glusterd-mgmt.h"
 #include "glusterd-op-sm.h"
+#include "glusterd-volgen.h"
+#include "glusterd-store.h"
 
 extern struct rpc_clnt_program gd_mgmt_v3_prog;
 
 
-static void
+void
 gd_mgmt_v3_collate_errors (struct syncargs *args, int op_ret, int op_errno,
                            char *op_errstr, int op_code,
                            glusterd_peerinfo_t *peerinfo, u_char *uuid)
@@ -33,6 +35,9 @@ gd_mgmt_v3_collate_errors (struct syncargs *args, int op_ret, int op_errno,
         char       op_err[PATH_MAX]  = "";
         int32_t    len               = -1;
         xlator_t  *this              = NULL;
+        int        is_operrstr_blk   = 0;
+        char       *err_string       = NULL;
+        char       *cli_err_str      = NULL;
 
         this = THIS;
         GF_ASSERT (this);
@@ -48,68 +53,76 @@ gd_mgmt_v3_collate_errors (struct syncargs *args, int op_ret, int op_errno,
                 else
                         peer_str = uuid_utoa (uuid);
 
-                if (op_errstr && strcmp (op_errstr, "")) {
-                        len = snprintf (err_str, sizeof(err_str) - 1,
-                                        "Error: %s", op_errstr);
-                        err_str[len] = '\0';
-                }
+                is_operrstr_blk = (op_errstr && strcmp (op_errstr, ""));
+                err_string     = (is_operrstr_blk) ? op_errstr : err_str;
 
                 switch (op_code) {
                 case GLUSTERD_MGMT_V3_LOCK:
                         {
-                                len = snprintf (op_err, sizeof(op_err) - 1,
+                                len = snprintf (op_err, sizeof(op_err),
                                                 "Locking failed "
-                                                "on %s. %s", peer_str, err_str);
+                                                "on %s. %s", peer_str,
+                                                err_string);
                                 break;
                         }
                 case GLUSTERD_MGMT_V3_PRE_VALIDATE:
                         {
-                                len = snprintf (op_err, sizeof(op_err) - 1,
+                                len = snprintf (op_err, sizeof(op_err),
                                                 "Pre Validation failed "
-                                                "on %s. %s", peer_str, err_str);
+                                                "on %s. %s", peer_str,
+                                                err_string);
                                 break;
                         }
                 case GLUSTERD_MGMT_V3_BRICK_OP:
                         {
-                                len = snprintf (op_err, sizeof(op_err) - 1,
+                                len = snprintf (op_err, sizeof(op_err),
                                                 "Brick ops failed "
-                                                "on %s. %s", peer_str, err_str);
+                                                "on %s. %s", peer_str,
+                                                err_string);
                                 break;
                         }
                 case GLUSTERD_MGMT_V3_COMMIT:
                         {
-                                len = snprintf (op_err, sizeof(op_err) - 1,
-                                                "Commit failed on %s. %s",
-                                                peer_str, err_str);
+                                len = snprintf (op_err, sizeof(op_err),
+                                                "Commit failed"
+                                                " on %s. %s", peer_str,
+                                                err_string);
                                 break;
                         }
                 case GLUSTERD_MGMT_V3_POST_VALIDATE:
                         {
-                                len = snprintf (op_err, sizeof(op_err) - 1,
+                                len = snprintf (op_err, sizeof(op_err),
                                                 "Post Validation failed "
-                                                "on %s. %s", peer_str, err_str);
+                                                "on %s. %s", peer_str,
+                                                err_string);
                                 break;
                         }
                 case GLUSTERD_MGMT_V3_UNLOCK:
                         {
-                                len = snprintf (op_err, sizeof(op_err) - 1,
+                                len = snprintf (op_err, sizeof(op_err),
                                                 "Unlocking failed "
-                                                "on %s. %s", peer_str, err_str);
+                                                "on %s. %s", peer_str,
+                                                err_string);
                                 break;
                         }
+                default :
+                        len = snprintf (op_err, sizeof(op_err),
+                                       "Unknown error! "
+                                       "on %s. %s", peer_str,
+                                        err_string);
                 }
-                op_err[len] = '\0';
+
+                cli_err_str = ((is_operrstr_blk) ? op_errstr : op_err);
 
                 if (args->errstr) {
-                        len = snprintf (err_str, sizeof(err_str) - 1,
-                                        "%s\n%s", args->errstr,
-                                        op_err);
+                        len = snprintf (err_str, sizeof(err_str),
+                                      "%s\n%s", args->errstr,
+                                      cli_err_str);
                         GF_FREE (args->errstr);
                         args->errstr = NULL;
                 } else
-                        len = snprintf (err_str, sizeof(err_str) - 1,
-                                        "%s", op_err);
-                err_str[len] = '\0';
+                        len = snprintf (err_str, sizeof(err_str),
+                                "%s", cli_err_str);
 
                 gf_log (this->name, GF_LOG_ERROR, "%s", op_err);
                 args->errstr = gf_strdup (err_str);
@@ -565,7 +578,7 @@ out:
         if (rsp_dict)
                 dict_unref (rsp_dict);
 
-        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, NULL,
+        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, rsp.op_errstr,
                                   GLUSTERD_MGMT_V3_PRE_VALIDATE,
                                   peerinfo, rsp.uuid);
 
@@ -800,7 +813,7 @@ gd_mgmt_v3_brick_op_cbk_fn (struct rpc_req *req, struct iovec *iov,
         op_errno = rsp.op_errno;
 
 out:
-        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, NULL,
+        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, rsp.op_errstr,
                                    GLUSTERD_MGMT_V3_BRICK_OP,
                                    peerinfo, rsp.uuid);
 
@@ -1030,7 +1043,7 @@ out:
         if (rsp_dict)
                 dict_unref (rsp_dict);
 
-        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, NULL,
+        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, rsp.op_errstr,
                                   GLUSTERD_MGMT_V3_COMMIT,
                                   peerinfo, rsp.uuid);
 
@@ -1228,7 +1241,7 @@ gd_mgmt_v3_post_validate_cbk_fn (struct rpc_req *req, struct iovec *iov,
         op_errno = rsp.op_errno;
 
 out:
-        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, NULL,
+        gd_mgmt_v3_collate_errors (args, op_ret, op_errno, rsp.op_errstr,
                                   GLUSTERD_MGMT_V3_POST_VALIDATE,
                                   peerinfo, rsp.uuid);
         if (rsp.op_errstr)
@@ -1306,7 +1319,7 @@ glusterd_mgmt_v3_post_validate (glusterd_conf_t  *conf, glusterd_op_t op,
         GF_ASSERT (this);
         GF_ASSERT (conf);
         GF_ASSERT (dict);
-        GF_ASSERT (req_dict);
+        GF_VALIDATE_OR_GOTO (this->name, req_dict, out);
         GF_ASSERT (op_errstr);
 
         peers = &conf->xaction_peers;
@@ -1687,6 +1700,68 @@ out:
 }
 
 int32_t
+glusterd_set_barrier_value (dict_t *dict, char *option)
+{
+        int32_t                 ret             = -1;
+        xlator_t                *this           = NULL;
+        glusterd_volinfo_t     *vol             = NULL;
+        char                    *volname        = NULL;
+
+        this = THIS;
+        GF_ASSERT (this);
+
+        GF_ASSERT (dict);
+        GF_ASSERT (option);
+
+        /* TODO : Change this when we support multiple volume.
+         * As of now only snapshot of single volume is supported,
+         * Hence volname1 is directly fetched
+         */
+        ret = dict_get_str (dict, "volname1", &volname);
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Volname not present in "
+                        "dict");
+                goto out;
+        }
+
+        ret = glusterd_volinfo_find (volname, &vol);
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Volume %s not found ",
+                        volname);
+                goto out;
+        }
+
+        ret = dict_set_dynstr_with_alloc (dict, "barrier", option);
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Failed to set barrier op "
+                        "in request dictionary");
+                goto out;
+        }
+
+        ret = dict_set_dynstr_with_alloc (vol->dict, "features.barrier",
+                                          option);
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Failed to set barrier op "
+                        "in volume option dict");
+                goto out;
+        }
+
+        gd_update_volume_op_versions (vol);
+
+        ret = glusterd_create_volfiles (vol);
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Failed to create volfiles");
+                goto out;
+        }
+
+        ret = glusterd_store_volinfo (vol, GLUSTERD_VOLINFO_VER_AC_INCREMENT);
+
+out:
+        gf_log (this->name, GF_LOG_DEBUG, "Returning %d", ret);
+        return ret;
+}
+
+int32_t
 glusterd_mgmt_v3_initiate_snap_phases (rpcsvc_request_t *req, glusterd_op_t op,
                                        dict_t *dict)
 {
@@ -1701,7 +1776,7 @@ glusterd_mgmt_v3_initiate_snap_phases (rpcsvc_request_t *req, glusterd_op_t op,
         gf_boolean_t                is_acquired      = _gf_false;
         uuid_t                      *originator_uuid = NULL;
         gf_boolean_t                success          = _gf_false;
-        char                        *tmp_errstr      = NULL;
+        char                        *cli_errstr      = NULL;
 
         this = THIS;
         GF_ASSERT (this);
@@ -1776,10 +1851,24 @@ glusterd_mgmt_v3_initiate_snap_phases (rpcsvc_request_t *req, glusterd_op_t op,
                 goto out;
         }
 
-        /* BRICK OP PHASE for initiating barrier*/
-        ret = dict_set_int32 (req_dict, "barrier", 1);
-        if (ret)
+        /* quorum check of the volume is done here */
+        ret = glusterd_snap_quorum_check (req_dict, _gf_false, &op_errstr);
+        if (ret) {
+                gf_log (this->name, GF_LOG_WARNING,
+                                "Volume quorum check failed");
                 goto out;
+        }
+
+        /* Set the operation type as pre, so that differentiation can be
+         * made whether the brickop is sent during pre-commit or post-commit
+         */
+        ret = dict_set_dynstr_with_alloc (req_dict, "operation-type", "pre");
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Failed to set "
+                        "operation-type in dictionary");
+                goto out;
+        }
+
         ret = glusterd_mgmt_v3_brick_op (conf, op, req_dict,
                                         &op_errstr, npeers);
         if (ret) {
@@ -1805,6 +1894,12 @@ glusterd_mgmt_v3_initiate_snap_phases (rpcsvc_request_t *req, glusterd_op_t op,
            above and along with it the originator glusterd also goes down?
            Who will initiate the cleanup?
         */
+        ret = dict_set_int32 (req_dict, "cleanup", 1);
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "failed to set dict");
+                goto unbarrier;
+        }
+
         ret = glusterd_mgmt_v3_commit (conf, op, dict, req_dict,
                                        &op_errstr, npeers);
         if (ret) {
@@ -1814,23 +1909,40 @@ glusterd_mgmt_v3_initiate_snap_phases (rpcsvc_request_t *req, glusterd_op_t op,
                    unlock ops also. We might lose the actual error that
                    caused the failure.
                 */
-                tmp_errstr = op_errstr;
+                cli_errstr = op_errstr;
                 op_errstr = NULL;
                 goto unbarrier;
         }
 
         success = _gf_true;
 unbarrier:
-        /* BRICK OP PHASE for removing the barrier*/
-        ret = dict_set_int32 (req_dict, "barrier", 0);
-        if (ret)
+        /* Set the operation type as post, so that differentiation can be
+         * made whether the brickop is sent during pre-commit or post-commit
+         */
+        ret = dict_set_dynstr_with_alloc (req_dict, "operation-type", "post");
+        if (ret) {
+                gf_log (this->name, GF_LOG_ERROR, "Failed to set "
+                        "operation-type in dictionary");
                 goto out;
+        }
+
         ret = glusterd_mgmt_v3_brick_op (conf, op, req_dict,
                                          &op_errstr, npeers);
 
         if (ret) {
                 gf_log (this->name, GF_LOG_ERROR, "Brick Ops Failed");
                 goto out;
+        }
+
+        /*Do a quorum check if the commit phase is successful*/
+        if (success) {
+                //quorum check of the snapshot volume
+                ret = glusterd_snap_quorum_check (dict, _gf_true, &op_errstr);
+                if (ret) {
+                        gf_log (this->name, GF_LOG_WARNING, 
+                                "Snapshot Volume quorum check failed");
+                        goto out;
+                }
         }
 
         ret = 0;
@@ -1855,19 +1967,15 @@ out:
                                                     npeers, is_acquired);
 
         /* If the commit op (snapshot taking) failed, then the error is stored
-           in tmp_errstr and unbarrier is called. Suppose, if unbarrier also
+           in cli_errstr and unbarrier is called. Suppose, if unbarrier also
            fails, then the error happened in unbarrier is logged and freed.
-           The error happened in commit op, which is stored in tmp_errstr
+           The error happened in commit op, which is stored in cli_errstr
            is sent to cli.
         */
-        if (tmp_errstr) {
-                if (op_errstr) {
-                        gf_log (this->name, GF_LOG_ERROR, "unbarrier brick op"
-                                "failed with the error %s", op_errstr);
-                        GF_FREE (op_errstr);
-                        op_errstr = NULL;
-                }
-                op_errstr = tmp_errstr;
+        if (cli_errstr) {
+                GF_FREE (op_errstr);
+                op_errstr = NULL;
+                op_errstr = cli_errstr;
         }
 
         /* LOCAL VOLUME(S) UNLOCK */

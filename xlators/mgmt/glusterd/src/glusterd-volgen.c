@@ -741,7 +741,7 @@ int
 glusterd_volinfo_get_boolean (glusterd_volinfo_t *volinfo, char *key)
 {
         char *val = NULL;
-        gf_boolean_t  boo = _gf_false;
+        gf_boolean_t  enabled = _gf_false;
         int ret = 0;
 
         ret = glusterd_volinfo_get (volinfo, key, &val);
@@ -749,14 +749,14 @@ glusterd_volinfo_get_boolean (glusterd_volinfo_t *volinfo, char *key)
                 return -1;
 
         if (val)
-                ret = gf_string2boolean (val, &boo);
+                ret = gf_string2boolean (val, &enabled);
         if (ret) {
                 gf_log ("", GF_LOG_ERROR, "value for %s option is not valid", key);
 
                 return -1;
         }
 
-        return boo;
+        return enabled;
 }
 
 gf_boolean_t
@@ -961,54 +961,54 @@ out:
 static void
 volgen_apply_filters (char *orig_volfile)
 {
-	DIR           *filterdir = NULL;
-	struct dirent  entry = {0,};
-	struct dirent *next = NULL;
-	char          *filterpath = NULL;
-	struct stat    statbuf = {0,};
+        DIR           *filterdir = NULL;
+        struct dirent  entry = {0,};
+        struct dirent *next = NULL;
+        char          *filterpath = NULL;
+        struct stat    statbuf = {0,};
 
-	filterdir = opendir(FILTERDIR);
-	if (!filterdir) {
-		return;
-	}
+        filterdir = opendir(FILTERDIR);
+        if (!filterdir) {
+                return;
+        }
 
-	while ((readdir_r(filterdir,&entry,&next) == 0) && next) {
-		if (!strncmp(entry.d_name,".",sizeof(entry.d_name))) {
-			continue;
-		}
-		if (!strncmp(entry.d_name,"..",sizeof(entry.d_name))) {
-			continue;
-		}
-		/*
-		 * d_type isn't guaranteed to be present/valid on all systems,
-		 * so do an explicit stat instead.
-		 */
-		if (gf_asprintf(&filterpath,"%s/%.*s",FILTERDIR,
-				sizeof(entry.d_name), entry.d_name) == (-1)) {
-			continue;
-		}
-		/* Deliberately use stat instead of lstat to allow symlinks. */
-		if (stat(filterpath,&statbuf) == (-1)) {
-			goto free_fp;
-		}
-		if (!S_ISREG(statbuf.st_mode)) {
-			goto free_fp;
-		}
-		/*
-		 * We could check the mode in statbuf directly, or just skip
-		 * this entirely and check for EPERM after exec fails, but this
-		 * is cleaner.
-		 */
-		if (access(filterpath,X_OK) != 0) {
-			goto free_fp;
-		}
-		if (runcmd(filterpath,orig_volfile,NULL)) {
-			gf_log("",GF_LOG_ERROR,"failed to run filter %.*s",
-			       (int)sizeof(entry.d_name), entry.d_name);
-		}
+        while ((readdir_r(filterdir,&entry,&next) == 0) && next) {
+                if (!strncmp(entry.d_name,".",sizeof(entry.d_name))) {
+                        continue;
+                }
+                if (!strncmp(entry.d_name,"..",sizeof(entry.d_name))) {
+                        continue;
+                }
+                /*
+                 * d_type isn't guaranteed to be present/valid on all systems,
+                 * so do an explicit stat instead.
+                 */
+                if (gf_asprintf(&filterpath,"%s/%.*s",FILTERDIR,
+                                sizeof(entry.d_name), entry.d_name) == (-1)) {
+                        continue;
+                }
+                /* Deliberately use stat instead of lstat to allow symlinks. */
+                if (stat(filterpath,&statbuf) == (-1)) {
+                        goto free_fp;
+                }
+                if (!S_ISREG(statbuf.st_mode)) {
+                        goto free_fp;
+                }
+                /*
+                 * We could check the mode in statbuf directly, or just skip
+                 * this entirely and check for EPERM after exec fails, but this
+                 * is cleaner.
+                 */
+                if (access(filterpath,X_OK) != 0) {
+                        goto free_fp;
+                }
+                if (runcmd(filterpath,orig_volfile,NULL)) {
+                        gf_log("",GF_LOG_ERROR,"failed to run filter %.*s",
+                               (int)sizeof(entry.d_name), entry.d_name);
+                }
 free_fp:
-		GF_FREE(filterpath);
-	}
+                GF_FREE(filterpath);
+        }
 }
 
 static int
@@ -1063,7 +1063,7 @@ volgen_write_volfile (volgen_graph_t *graph, char *filename)
 
         GF_FREE (ftmp);
 
-	volgen_apply_filters(filename);
+        volgen_apply_filters(filename);
 
         return 0;
 
@@ -1258,8 +1258,8 @@ static int
 server_check_marker_off (volgen_graph_t *graph, struct volopt_map_entry *vme,
                          glusterd_volinfo_t *volinfo)
 {
-        gf_boolean_t           bool = _gf_false;
-        int                    ret = 0;
+        gf_boolean_t enabled = _gf_false;
+        int ret = 0;
 
         GF_ASSERT (volinfo);
         GF_ASSERT (vme);
@@ -1267,8 +1267,8 @@ server_check_marker_off (volgen_graph_t *graph, struct volopt_map_entry *vme,
         if (strcmp (vme->option, "!xtime") != 0)
                 return 0;
 
-        ret = gf_string2boolean (vme->value, &bool);
-        if (ret || bool)
+        ret = gf_string2boolean (vme->value, &enabled);
+        if (ret || enabled)
                 goto out;
 
         ret = glusterd_volinfo_get_boolean (volinfo, VKEY_MARKER_XTIME);
@@ -1279,10 +1279,10 @@ server_check_marker_off (volgen_graph_t *graph, struct volopt_map_entry *vme,
         }
 
         if (ret) {
-                bool = _gf_false;
-                ret = glusterd_check_gsync_running (volinfo, &bool);
+                enabled = _gf_false;
+                ret = glusterd_check_gsync_running (volinfo, &enabled);
 
-                if (bool) {
+                if (enabled) {
                         gf_log ("", GF_LOG_WARNING, GEOREP" sessions active"
                                 "for the volume %s, cannot disable marker "
                                 ,volinfo->volname);
@@ -1366,6 +1366,46 @@ log_format_option_handler (volgen_graph_t *graph, struct volopt_map_entry *vme,
 }
 
 static int
+log_buf_size_option_handler (volgen_graph_t *graph,
+                             struct volopt_map_entry *vme,
+                             void *param)
+{
+        char  *role = NULL;
+        struct volopt_map_entry vme2 = {0,};
+
+        role = (char *) param;
+
+        if (strcmp (vme->option, "!log-buf-size") != 0 ||
+            !strstr (vme->key, role))
+                return 0;
+
+        memcpy (&vme2, vme, sizeof (vme2));
+        vme2.option = "log-buf-size";
+
+        return basic_option_handler (graph, &vme2, NULL);
+}
+
+static int
+log_flush_timeout_option_handler (volgen_graph_t *graph,
+                                  struct volopt_map_entry *vme,
+                                  void *param)
+{
+        char  *role = NULL;
+        struct volopt_map_entry vme2 = {0,};
+
+        role = (char *) param;
+
+        if (strcmp (vme->option, "!log-flush-timeout") != 0 ||
+            !strstr (vme->key, role))
+                return 0;
+
+        memcpy (&vme2, vme, sizeof (vme2));
+        vme2.option = "log-flush-timeout";
+
+        return basic_option_handler (graph, &vme2, NULL);
+}
+
+static int
 volgen_graph_set_xl_options (volgen_graph_t *graph, dict_t *dict)
 {
         int32_t   ret               = -1;
@@ -1423,6 +1463,12 @@ server_spec_option_handler (volgen_graph_t *graph,
         if (!ret)
                 ret = log_format_option_handler (graph, vme, "brick");
 
+        if (!ret)
+                ret = log_buf_size_option_handler (graph, vme, "brick");
+
+        if (!ret)
+                ret = log_flush_timeout_option_handler (graph, vme, "brick");
+
         return ret;
 }
 
@@ -1471,6 +1517,7 @@ server_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
         gf_boolean_t          quota_enabled = _gf_true;
         gf_boolean_t          pgfid_feat    = _gf_false;
         char                 *value         = NULL;
+        char                 *ssl_user      = NULL;
 
         brickinfo = param;
         path      = brickinfo->path;
@@ -1589,6 +1636,10 @@ server_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
         if (ret)
                 return -1;
 
+        xl = volgen_graph_add (graph, "features/barrier", volname);
+        if (!xl)
+               return -1;
+
         ret = dict_get_int32 (volinfo->dict, "enable-pump", &pump);
         if (ret == -ENOENT)
                 ret = pump = 0;
@@ -1606,9 +1657,28 @@ server_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
                 if (!rbxl)
                         return -1;
 
-		ptranst = glusterd_get_trans_type_rb (volinfo->transport_type);
-		if (NULL == ptranst)
-			return -1;
+                ptranst = glusterd_get_trans_type_rb (volinfo->transport_type);
+                if (NULL == ptranst)
+                        return -1;
+
+                if (dict_get_str (set_dict, SSL_CERT_DEPTH_OPT, &value) == 0) {
+                        ret = xlator_set_option (rbxl, "ssl-cert-depth", value);
+                        if (ret) {
+                                gf_log ("glusterd", GF_LOG_WARNING,
+                                        "failed to set ssl-cert-depth");
+                                return -1;
+                        }
+                }
+
+                if (dict_get_str (set_dict, SSL_CIPHER_LIST_OPT, &value) == 0) {
+                        ret = xlator_set_option (rbxl, "ssl-cipher-list",
+                                                 value);
+                        if (ret) {
+                                gf_log ("glusterd", GF_LOG_WARNING,
+                                        "failed to set ssl-cipher-list");
+                                return -1;
+                        }
+                }
 
                 if (username) {
                         ret = xlator_set_option (rbxl, "username", username);
@@ -1694,8 +1764,7 @@ server_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
         }
 
         /* Check for read-only volume option, and add it to the graph */
-        if (dict_get_str_boolean (set_dict, "features.read-only", 0)
-                || volinfo -> is_snap_volume) {
+        if (dict_get_str_boolean (set_dict, "features.read-only", 0)){
                 xl = volgen_graph_add (graph, "features/read-only", volname);
                 if (!xl) {
                         ret = -1;
@@ -1748,6 +1817,24 @@ server_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
                         return -1;
         }
 
+        if (dict_get_str (set_dict, SSL_CERT_DEPTH_OPT, &value) == 0) {
+                ret = xlator_set_option (xl, "ssl-cert-depth", value);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_WARNING,
+                                "failed to set ssl-cert-depth");
+                        return -1;
+                }
+        }
+
+        if (dict_get_str (set_dict, SSL_CIPHER_LIST_OPT, &value) == 0) {
+                ret = xlator_set_option (xl, "ssl-cipher-list", value);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_WARNING,
+                                "failed to set ssl-cipher-list");
+                        return -1;
+                }
+        }
+
         if (username) {
                 memset (key, 0, sizeof (key));
                 snprintf (key, sizeof (key), "auth.login.%s.allow", path);
@@ -1763,6 +1850,15 @@ server_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
                           username);
 
                 ret = xlator_set_option (xl, key, password);
+                if (ret)
+                        return -1;
+        }
+
+        if (dict_get_str (volinfo->dict, "auth.ssl-allow", &ssl_user) == 0) {
+                memset (key, 0, sizeof (key));
+                snprintf (key, sizeof (key), "auth.login.%s.ssl-allow", path);
+
+                ret = xlator_set_option (xl, key, ssl_user);
                 if (ret)
                         return -1;
         }
@@ -2154,20 +2250,116 @@ out:
 
 }
 
+
+static xlator_t *
+volgen_graph_build_client (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
+                           char *hostname, char *subvol, char *xl_id,
+                           char *transt, dict_t *set_dict)
+{
+        xlator_t                *xl                 = NULL;
+        int                      ret                = -2;
+        uint32_t                 client_type        = GF_CLIENT_OTHER;
+        char                    *str                = NULL;
+        char                    *ssl_str            = NULL;
+        gf_boolean_t             ssl_bool           = _gf_false;
+        char                    *value              = NULL;
+
+        GF_ASSERT (graph);
+        GF_ASSERT (subvol);
+        GF_ASSERT (xl_id);
+        GF_ASSERT (transt);
+
+        xl = volgen_graph_add_nolink (graph, "protocol/client",
+                                      "%s", xl_id);
+        if (!xl)
+                goto err;
+
+        ret = xlator_set_option (xl, "ping-timeout", "42");
+        if (ret)
+                goto err;
+
+        if (hostname) {
+                ret = xlator_set_option (xl, "remote-host", hostname);
+                if (ret)
+                        goto err;
+        }
+
+        ret = xlator_set_option (xl, "remote-subvolume", subvol);
+        if (ret)
+                goto err;
+
+        ret = xlator_set_option (xl, "transport-type", transt);
+        if (ret)
+                goto err;
+
+        ret = dict_get_uint32 (set_dict, "trusted-client",
+                               &client_type);
+
+        if (!ret && client_type == GF_CLIENT_TRUSTED) {
+                str = NULL;
+                str = glusterd_auth_get_username (volinfo);
+                if (str) {
+                        ret = xlator_set_option (xl, "username",
+                                                 str);
+                        if (ret)
+                                goto err;
+                }
+
+                str = glusterd_auth_get_password (volinfo);
+                if (str) {
+                        ret = xlator_set_option (xl, "password",
+                                                 str);
+                        if (ret)
+                                goto err;
+                }
+        }
+
+        if (dict_get_str(set_dict,"client.ssl",&ssl_str) == 0) {
+                if (gf_string2boolean(ssl_str,&ssl_bool) == 0) {
+                        if (ssl_bool) {
+                                ret = xlator_set_option(xl,
+                                        "transport.socket.ssl-enabled",
+                                        "true");
+                                if (ret) {
+                                        goto err;
+                                }
+                        }
+                }
+        }
+
+        if (dict_get_str (set_dict, SSL_CERT_DEPTH_OPT, &value) == 0) {
+                ret = xlator_set_option (xl, "ssl-cert-depth", value);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_WARNING,
+                                "failed to set ssl-cert-depth");
+                        goto err;
+                }
+        }
+
+        if (dict_get_str (set_dict, SSL_CIPHER_LIST_OPT, &value) == 0) {
+                ret = xlator_set_option (xl, "ssl-cipher-list", value);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_WARNING,
+                                "failed to set ssl-cipher-list");
+                        goto err;
+                }
+        }
+
+        return xl;
+err:
+        return NULL;
+}
+
 static int
 volgen_graph_build_clients (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
                             dict_t *set_dict, void *param)
 {
         int                      i                  = 0;
         int                      ret                = -1;
-        uint32_t                 client_type        = GF_CLIENT_OTHER;
         char                     transt[16]         = {0,};
         char                    *volname            = NULL;
-        char                    *str                = NULL;
         glusterd_brickinfo_t    *brick              = NULL;
         xlator_t                *xl                 = NULL;
-        char                    *ssl_str            = NULL;
-        gf_boolean_t             ssl_bool;
 
         volname = volinfo->volname;
 
@@ -2194,56 +2386,14 @@ volgen_graph_build_clients (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
                 strcpy (transt, "tcp");
 
         i = 0;
-        ret = -1;
         list_for_each_entry (brick, &volinfo->bricks, brick_list) {
-                ret = -1;
-                xl = volgen_graph_add_nolink (graph, "protocol/client",
-                                              "%s", brick->brick_id);
-                if (!xl)
+                xl = volgen_graph_build_client (graph, volinfo,
+                                                brick->hostname, brick->path,
+                                                brick->brick_id,
+                                                transt, set_dict);
+                if (!xl) {
+                        ret = -1;
                         goto out;
-                ret = xlator_set_option (xl, "remote-host", brick->hostname);
-                if (ret)
-                        goto out;
-                ret = xlator_set_option (xl, "remote-subvolume", brick->path);
-                if (ret)
-                        goto out;
-                ret = xlator_set_option (xl, "transport-type", transt);
-                if (ret)
-                        goto out;
-
-                ret = dict_get_uint32 (set_dict, "trusted-client",
-                                       &client_type);
-
-                if (!ret && client_type == GF_CLIENT_TRUSTED) {
-                        str = NULL;
-                        str = glusterd_auth_get_username (volinfo);
-                        if (str) {
-                                ret = xlator_set_option (xl, "username",
-                                                         str);
-                                if (ret)
-                                        goto out;
-                        }
-
-                        str = glusterd_auth_get_password (volinfo);
-                        if (str) {
-                                ret = xlator_set_option (xl, "password",
-                                                         str);
-                                if (ret)
-                                        goto out;
-                        }
-                }
-
-                if (dict_get_str(set_dict,"client.ssl",&ssl_str) == 0) {
-                        if (gf_string2boolean(ssl_str,&ssl_bool) == 0) {
-                                if (ssl_bool) {
-                                        ret = xlator_set_option(xl,
-                                                "transport.socket.ssl-enabled",
-                                                "true");
-                                        if (ret) {
-                                                goto out;
-                                        }
-                                }
-                        }
                 }
 
                 i++;
@@ -2304,6 +2454,70 @@ volgen_graph_build_clusters (volgen_graph_t *graph,
         }
 
         ret = j;
+out:
+        return ret;
+}
+
+/**
+ * This is the build graph function for user-serviceable snapshots.
+ * Generates  snapview-client
+ */
+static int
+volgen_graph_build_snapview_client (volgen_graph_t *graph,
+                                    glusterd_volinfo_t *volinfo,
+                                    char *volname, dict_t *set_dict)
+{
+        int                ret                  = 0;
+        xlator_t          *prev_top             = NULL;
+        xlator_t          *prot_clnt            = NULL;
+        xlator_t          *svc                  = NULL;
+        char               transt [16]          = {0,};
+        char              *svc_args[]           = {"features/snapview-client",
+                                                   "%s-snapview-client"};
+        char               subvol [1024]        = {0,};
+        char               xl_id [1024]         = {0,};
+
+        prev_top = (xlator_t *)(graph->graph.first);
+
+        snprintf (subvol, sizeof (subvol), "snapd-%s", volinfo->volname);
+        snprintf (xl_id, sizeof (xl_id), "%s-snapd-client", volinfo->volname);
+
+        get_transport_type (volinfo, set_dict, transt, _gf_false);
+
+        prot_clnt = volgen_graph_build_client (graph, volinfo, NULL, subvol,
+                                               xl_id, transt, set_dict);
+        if (!prot_clnt) {
+                ret = -1;
+                goto out;
+        }
+
+        svc = volgen_graph_add_nolink (graph, svc_args[0], svc_args[1],
+                                       volname);
+        if (!svc) {
+                ret = -1;
+                goto out;
+        }
+
+        /**
+         * Ordering the below two traslators (cur_top & prot_clnt) is important
+         * as snapview client implementation is built on the policy that
+         * normal volume path goes to FIRST_CHILD and snap world operations
+         * goes to SECOND_CHILD
+         **/
+        ret = volgen_xlator_link (graph->graph.first, prev_top);
+        if (ret) {
+                gf_log (THIS->name, GF_LOG_ERROR, "failed to link the "
+                        "snapview-client to distribute");
+                goto out;
+        }
+
+        ret = volgen_xlator_link (graph->graph.first, prot_clnt);
+        if (ret) {
+                gf_log (THIS->name, GF_LOG_ERROR, "failed to link the "
+                        "snapview-client to snapview-server");
+                goto out;
+        }
+
 out:
         return ret;
 }
@@ -2470,10 +2684,14 @@ volume_volgen_graph_build_clusters (volgen_graph_t *graph,
                                                        "%s-replicate-%d"};
         char                    *stripe_args[]      = {"cluster/stripe",
                                                        "%s-stripe-%d"};
+        char                    *disperse_args[]    = {"cluster/disperse",
+                                                       "%s-disperse-%d"};
+        char                    option[32]          = "";
         int                     rclusters           = 0;
         int                     clusters            = 0;
         int                     dist_count          = 0;
         int                     ret                 = -1;
+        xlator_t *              ec                  = NULL;
 
         if (!volinfo->dist_leaf_count)
                 goto out;
@@ -2523,6 +2741,26 @@ volume_volgen_graph_build_clusters (volgen_graph_t *graph,
                 if (clusters < 0)
                         goto out;
                 break;
+        case GF_CLUSTER_TYPE_DISPERSE:
+                clusters = volgen_graph_build_clusters (graph, volinfo,
+                                                        disperse_args[0],
+                                                        disperse_args[1],
+                                                        volinfo->brick_count,
+                                                        volinfo->disperse_count);
+                if (clusters < 0)
+                        goto out;
+
+                sprintf(option, "%d", volinfo->redundancy_count);
+                ec = first_of (graph);
+                while (clusters-- > 0) {
+                        ret = xlator_set_option (ec, "redundancy", option);
+                        if (ret)
+                                goto out;
+
+                        ec = ec->next;
+                }
+
+                break;
         default:
                 gf_log ("", GF_LOG_ERROR, "volume inconsistency: "
                         "unrecognized clustering type");
@@ -2547,26 +2785,26 @@ out:
 }
 
 static int client_graph_set_perf_options(volgen_graph_t *graph,
-					 glusterd_volinfo_t *volinfo,
-					 dict_t *set_dict)
+                                         glusterd_volinfo_t *volinfo,
+                                         dict_t *set_dict)
 {
-	data_t *tmp_data = NULL;
-	char *volname = NULL;
+        data_t *tmp_data = NULL;
+        char *volname = NULL;
 
-	/*
-	 * Logic to make sure NFS doesn't have performance translators by
-	 * default for a volume
-	 */
-	volname = volinfo->volname;
-	tmp_data = dict_get (set_dict, "nfs-volume-file");
-	if (!tmp_data)
-		return volgen_graph_set_options_generic(graph, set_dict,
-							volname,
-							&perfxl_option_handler);
-	else
-		return volgen_graph_set_options_generic(graph, set_dict,
-							volname,
-							&nfsperfxl_option_handler);
+        /*
+         * Logic to make sure NFS doesn't have performance translators by
+         * default for a volume
+         */
+        volname = volinfo->volname;
+        tmp_data = dict_get (set_dict, "nfs-volume-file");
+        if (!tmp_data)
+                return volgen_graph_set_options_generic(graph, set_dict,
+                                                        volinfo,
+                                                        &perfxl_option_handler);
+        else
+                return volgen_graph_set_options_generic(graph, set_dict,
+                                                        volname,
+                                                        &nfsperfxl_option_handler);
 }
 
 static int
@@ -2593,6 +2831,21 @@ client_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
         ret = volume_volgen_graph_build_clusters (graph, volinfo, _gf_false);
         if (ret == -1)
                 goto out;
+
+        /* As of now snapshot volume is read-only. Read-only xlator is loaded
+         * in client graph so that AFR & DHT healing can be done in server.
+         */
+        if (volinfo->is_snap_volume) {
+                xl = volgen_graph_add (graph, "features/read-only", volname);
+                if (!xl) {
+                        gf_log (this->name, GF_LOG_ERROR, "Failed to add "
+                                "read-only feature to the graph of %s "
+                                "snapshot with %s origin volume",
+                                volname, volinfo->parent_volname);
+                        ret = -1;
+                        goto out;
+                }
+        }
 
         /* Check for compress volume option, and add it to the graph on client side */
         ret = dict_get_str_boolean (set_dict, "network.compression", 0);
@@ -2735,9 +2988,25 @@ client_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
                 }
         }
 
+        ret = dict_get_str_boolean (set_dict, "server.manage-gids", _gf_false);
+        if (ret != -1) {
+               ret = dict_set_str (set_dict, "client.send-gids",
+                                   ret ? "false" : "true");
+               if (ret)
+                       gf_log (THIS->name, GF_LOG_WARNING, "changing client"
+                               " protocol option failed");
+        }
+
         ret = client_graph_set_perf_options(graph, volinfo, set_dict);
         if (ret)
                 goto out;
+
+        if (!volinfo->is_snap_volume && glusterd_is_snapd_enabled (volinfo)) {
+                ret = volgen_graph_build_snapview_client
+                                           (graph, volinfo, volname, set_dict);
+                if (ret == -1)
+                        goto out;
+        }
 
         /* add debug translators depending on the options */
         ret = check_and_add_debug_xl (graph, set_dict, volname,
@@ -2775,6 +3044,18 @@ client_graph_builder (volgen_graph_t *graph, glusterd_volinfo_t *volinfo,
         if (ret)
                 gf_log (this->name, GF_LOG_WARNING, "changing client log format"
                         " failed");
+
+        ret = volgen_graph_set_options_generic (graph, set_dict, "client",
+                                                &log_buf_size_option_handler);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING, "Failed to change "
+                        "log-buf-size option");
+
+        ret = volgen_graph_set_options_generic (graph, set_dict, "client",
+                                            &log_flush_timeout_option_handler);
+        if (ret)
+                gf_log (this->name, GF_LOG_WARNING, "Failed to change "
+                        "log-flush-timeout option");
 
 out:
         return ret;
@@ -2981,6 +3262,34 @@ nfs_option_handler (volgen_graph_t *graph,
                         return -1;
         }
 
+          if (! strcmp (vme->option, "!nfs-ganesha.enable")) {
+                ret = gf_asprintf (&aa, "nfs-ganesha.%s.enable",
+                                        volinfo->volname);
+
+                if (ret != -1) {
+                        ret = xlator_set_option (xl, aa, vme->value);
+                        GF_FREE (aa);
+                }
+
+                if (ret)
+                        return -1;
+        }
+
+         if (! strcmp (vme->option, "!nfs-ganesha.host")) {
+                ret = gf_asprintf (&aa, "nfs-ganesha.%s.host",
+                                        volinfo->volname);
+
+                if (ret != -1) {
+                        ret = xlator_set_option (xl, aa, vme->value);
+                        GF_FREE (aa);
+                }
+
+                if (ret)
+                        return -1;
+        }
+
+
+
         if ( (strcmp (vme->voltype, "nfs/server") == 0) &&
              (vme->option && vme->option[0]!='!') ) {
                ret = xlator_set_option (xl, vme->option, vme->value);
@@ -3135,7 +3444,23 @@ build_shd_graph (volgen_graph_t *graph, dict_t *mod_dict)
                                                  &log_format_option_handler);
                 if (ret)
                         gf_log (this->name, GF_LOG_WARNING, "changing log "
-                                "format level of self-heal daemon failed");
+                                "format of self-heal daemon failed");
+
+                ret = volgen_graph_set_options_generic (graph, set_dict,
+                                                        "client",
+                                                 &log_buf_size_option_handler);
+                if (ret)
+                        gf_log (this->name, GF_LOG_WARNING, "changing "
+                                "log-buf-size for self-heal daemon failed");
+
+                ret = volgen_graph_set_options_generic (graph, set_dict,
+                                                        "client",
+                                             &log_flush_timeout_option_handler);
+                if (ret)
+                        gf_log (this->name, GF_LOG_WARNING, "changing "
+                                "log-flush-timeout for self-heal daemon "
+                                "failed");
+
 
                 ret = dict_reset (set_dict);
                 if (ret)
@@ -3189,7 +3514,7 @@ build_nfs_graph (volgen_graph_t *graph, dict_t *mod_dict)
         if (ret)
                 goto out;
 
-        ret = xlator_set_option (nfsxl, "nfs.drc", "on");
+        ret = xlator_set_option (nfsxl, "nfs.drc", "off");
         if (ret)
                 goto out;
 
@@ -3359,7 +3684,8 @@ glusterd_is_valid_volfpath (char *volname, char *brick)
         strncpy (volinfo->volname, volname, sizeof (volinfo->volname));
         get_brick_filepath (volfpath, volinfo, brickinfo);
 
-        ret = (strlen (volfpath) < _POSIX_PATH_MAX);
+        ret = ((strlen(volfpath) < PATH_MAX) &&
+                strlen (strrchr(volfpath, '/')) < _POSIX_PATH_MAX);
 
 out:
         if (brickinfo)
@@ -3401,7 +3727,7 @@ build_quotad_graph (volgen_graph_t *graph, dict_t *mod_dict)
         dict_t             *set_dict      = NULL;
         int                ret            = 0;
         xlator_t           *quotad_xl     = NULL;
-	char		   *skey	  = NULL;
+        char               *skey          = NULL;
 
         this = THIS;
         priv = this->private;
@@ -3652,7 +3978,7 @@ glusterd_create_rb_volfiles (glusterd_volinfo_t *volinfo,
 }
 
 int
-glusterd_create_volfiles_and_notify_services (glusterd_volinfo_t *volinfo)
+glusterd_create_volfiles (glusterd_volinfo_t *volinfo)
 {
         int        ret  = -1;
         xlator_t  *this = NULL;
@@ -3674,11 +4000,25 @@ glusterd_create_volfiles_and_notify_services (glusterd_volinfo_t *volinfo)
         }
 
         ret = generate_client_volfiles (volinfo, GF_CLIENT_OTHER);
-        if (ret) {
+        if (ret)
                 gf_log (this->name, GF_LOG_ERROR,
                         "Could not generate client volfiles");
+
+out:
+        return ret;
+}
+
+int
+glusterd_create_volfiles_and_notify_services (glusterd_volinfo_t *volinfo)
+{
+        int        ret  = -1;
+        xlator_t  *this = NULL;
+
+        this = THIS;
+
+        ret = glusterd_create_volfiles (volinfo);
+        if (ret)
                 goto out;
-        }
 
         ret = glusterd_fetchspec_notify (this);
 
@@ -3853,13 +4193,129 @@ out:
 }
 
 int
-glusterd_create_quotad_volfile ()
+glusterd_generate_snapd_volfile (volgen_graph_t *graph,
+                                 glusterd_volinfo_t *volinfo)
+{
+        xlator_t       *xl              = NULL;
+        char           *username        = NULL;
+        char           *passwd          = NULL;
+        int             ret             = 0;
+        char            key [PATH_MAX]  = {0, };
+        dict_t         *set_dict        = NULL;
+        char           *loglevel        = NULL;
+        char           *xlator          = NULL;
+        char           *value           = NULL;
+
+        set_dict = dict_copy (volinfo->dict, NULL);
+        if (!set_dict)
+                return -1;
+
+        ret = dict_get_str (set_dict, "xlator", &xlator);
+        if (!ret) {
+                ret = dict_get_str (set_dict, "loglevel", &loglevel);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_ERROR, "could not get both"
+                                " translator name and loglevel for log level "
+                                "request");
+                        return -1;
+                }
+        }
+
+        xl = volgen_graph_add (graph, "features/snapview-server",
+                               volinfo->volname);
+        if (!xl)
+                return -1;
+
+        ret = xlator_set_option (xl, "volname", volinfo->volname);
+        if (ret)
+                return -1;
+
+        xl = volgen_graph_add (graph, "performance/io-threads",
+                               volinfo->volname);
+        if (!xl)
+                return -1;
+
+        snprintf (key, sizeof (key), "snapd-%s", volinfo->volname);
+        xl = volgen_graph_add_as (graph, "debug/io-stats", key);
+        if (!xl)
+                return -1;
+
+        xl = volgen_graph_add (graph, "protocol/server", volinfo->volname);
+        if (!xl)
+                return -1;
+
+        ret = xlator_set_option (xl, "transport-type", "tcp");
+        if (ret)
+                return -1;
+
+        if (dict_get_str (set_dict, SSL_CERT_DEPTH_OPT, &value) == 0) {
+                ret = xlator_set_option (xl, "ssl-cert-depth", value);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_WARNING,
+                                "failed to set ssl-cert-depth");
+                        return -1;
+                }
+        }
+
+        if (dict_get_str (set_dict, SSL_CIPHER_LIST_OPT, &value) == 0) {
+                ret = xlator_set_option (xl, "ssl-cipher-list", value);
+                if (ret) {
+                        gf_log ("glusterd", GF_LOG_WARNING,
+                                "failed to set ssl-cipher-list");
+                        return -1;
+                }
+        }
+
+        username = glusterd_auth_get_username (volinfo);
+        passwd = glusterd_auth_get_password (volinfo);
+
+        snprintf (key, sizeof (key), "auth.login.snapd-%s.allow",
+                                                        volinfo->volname);
+        ret = xlator_set_option (xl, key, username);
+        if (ret)
+                return -1;
+
+        snprintf (key, sizeof (key), "auth.login.%s.password", username);
+        ret = xlator_set_option (xl, key, passwd);
+        if (ret)
+                return -1;
+
+        ret = volgen_graph_set_options_generic
+                (graph, set_dict,
+                 (xlator && loglevel)? (void *)set_dict: volinfo,
+                 (xlator && loglevel) ?
+                 &server_spec_extended_option_handler:
+                 &server_spec_option_handler);
+
+        return ret;
+}
+
+int
+glusterd_create_snapd_volfile (glusterd_volinfo_t *volinfo)
+{
+        volgen_graph_t  graph                   = {0,};
+        int             ret                     = -1;
+        char            filename [PATH_MAX]     = {0,};
+
+        glusterd_get_snapd_volfile (volinfo, filename, PATH_MAX);
+
+        ret = glusterd_generate_snapd_volfile (&graph, volinfo);
+        if (!ret)
+                ret = volgen_write_volfile (&graph, filename);
+
+        volgen_graph_free (&graph);
+
+        return ret;
+}
+
+int
+glusterd_create_quotad_volfile (void *data)
 {
         char             filepath[PATH_MAX] = {0,};
         glusterd_conf_t *conf               = THIS->private;
 
         glusterd_get_nodesvc_volfile ("quotad", conf->workdir,
-                                            filepath, sizeof (filepath));
+                                      filepath, sizeof (filepath));
         return glusterd_create_global_volfile (build_quotad_graph,
                                                filepath, NULL);
 }
@@ -4261,129 +4717,4 @@ gd_is_boolean_option (char *key)
                 return _gf_true;
 
         return _gf_false;
-}
-
-/* This function will restore origin volume to it's snap.
- * The restore operation will simply replace the Gluster origin
- * volume with the snap volume.
- * TODO: Multi-volume delete to be done.
- *       Cleanup in case of restore failure is pending.
- *
- * @param orig_vol      volinfo of origin volume
- * @param snap_vol      volinfo of snapshot volume
- *
- * @return 0 on success and negative value on error
- */
-int
-gd_restore_snap_volume (dict_t *rsp_dict,
-                        glusterd_volinfo_t *orig_vol,
-                        glusterd_volinfo_t *snap_vol)
-{
-        int                     ret             = -1;
-        glusterd_volinfo_t      *new_volinfo    = NULL;
-        glusterd_snap_t         *snap           = NULL;
-        xlator_t                *this           = NULL;
-        glusterd_conf_t         *conf           = NULL;
-        glusterd_volinfo_t      *temp_volinfo   = NULL;
-        glusterd_volinfo_t      *voliter        = NULL;
-
-        this = THIS;
-        GF_ASSERT (this);
-        GF_ASSERT (rsp_dict);
-        conf = this->private;
-        GF_ASSERT (conf);
-
-        GF_VALIDATE_OR_GOTO (this->name, orig_vol, out);
-        GF_VALIDATE_OR_GOTO (this->name, snap_vol, out);
-        snap = snap_vol->snapshot;
-        GF_VALIDATE_OR_GOTO (this->name, snap, out);
-
-        /* Snap volume must be stoped before performing the
-         * restore operation.
-         */
-        ret = glusterd_stop_volume (snap_vol);
-        if (ret) {
-                gf_log (this->name, GF_LOG_ERROR, "Failed to stop "
-                        "snap volume(%s)", snap_vol->volname);
-                goto out;
-        }
-
-        /* Create a new volinfo for the restored volume */
-        ret = glusterd_volinfo_dup (snap_vol, &new_volinfo, _gf_true);
-        if (ret) {
-                gf_log (this->name, GF_LOG_ERROR, "Failed to create volinfo");
-                goto out;
-        }
-
-        /* Following entries need to be derived from origin volume. */
-        strcpy (new_volinfo->volname, orig_vol->volname);
-        uuid_copy (new_volinfo->volume_id, orig_vol->volume_id);
-        new_volinfo->snap_count = orig_vol->snap_count;
-        new_volinfo->snap_max_hard_limit = orig_vol->snap_max_hard_limit;
-        new_volinfo->is_volume_restored = _gf_true;
-
-        /* Bump the version of the restored volume, so that nodes *
-         * which are done can sync during handshake */
-        new_volinfo->version = orig_vol->version;
-
-        list_for_each_entry_safe (voliter, temp_volinfo,
-                         &orig_vol->snap_volumes, snapvol_list) {
-                list_add_tail (&voliter->snapvol_list,
-                               &new_volinfo->snap_volumes);
-        }
-        /* Copy the snap vol info to the new_volinfo.*/
-        ret = glusterd_snap_volinfo_restore (rsp_dict, new_volinfo, snap_vol);
-        if (ret) {
-                gf_log (this->name, GF_LOG_ERROR, "Failed to restore snap");
-                (void)glusterd_volinfo_delete (new_volinfo);
-                goto out;
-        }
-
-        /* If the orig_vol is already restored then we should delete
-         * the backend LVMs */
-        if (orig_vol->is_volume_restored) {
-                ret = glusterd_lvm_snapshot_remove (rsp_dict, orig_vol);
-                if (ret) {
-                        gf_log (this->name, GF_LOG_ERROR, "Failed to remove "
-                                "LVM backend");
-                        (void)glusterd_volinfo_delete (new_volinfo);
-                        goto out;
-                }
-        }
-
-        /* Once the new_volinfo is completely constructed then delete
-         * the orinal volinfo
-         */
-        ret = glusterd_volinfo_delete (orig_vol);
-        if (ret) {
-                gf_log (this->name, GF_LOG_ERROR, "Failed to delete volinfo");
-                (void)glusterd_volinfo_delete (new_volinfo);
-                goto out;
-        }
-        /* New volinfo always shows the status as created. Therefore
-         * set the status to stop. */
-        glusterd_set_volume_status (new_volinfo, GLUSTERD_STATUS_STOPPED);
-
-        list_add_tail (&new_volinfo->vol_list, &conf->volumes);
-
-        /* Now delete the snap entry. As a first step delete the snap
-         * volume information stored in store. */
-        ret = glusterd_snap_remove (rsp_dict, snap, _gf_false, _gf_true);
-        if (ret) {
-                gf_log (this->name, GF_LOG_WARNING, "Failed to delete "
-                        "snap %s", snap->snapname);
-                goto out;
-        }
-
-        ret = glusterd_store_volinfo (new_volinfo,
-                                      GLUSTERD_VOLINFO_VER_AC_INCREMENT);
-        if (ret) {
-                gf_log (this->name, GF_LOG_ERROR, "Failed to store volinfo");
-                goto out;
-        }
-
-        ret = 0;
-out:
-
-        return ret;
 }

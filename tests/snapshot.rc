@@ -5,6 +5,17 @@ LVM_PREFIX="patchy_snap"
 LVM_COUNT=0
 VHD_SIZE="1G"
 
+#This function will init B# bricks
+#This is used when launch_cluster is
+#not called to init B#. Call it before
+#setup_lvm
+function init_n_bricks() {
+    local count=$1
+    for i in `seq 1 $count`; do
+        eval "B$i=/d/backends/$i"
+    done
+}
+
 function init_lvm() {
     if [ "$1" == "" ]; then
         echo "Error: Invalid argument supplied"
@@ -44,6 +55,13 @@ function init_lvm() {
 
     LVM_DEFINED=1
     return 0
+}
+
+function verify_lvm_version() {
+    if `/sbin/lvcreate --help | grep -q thin`; then
+        return 0;
+    fi
+    return 1;
 }
 
 function setup_lvm() {
@@ -268,6 +286,19 @@ function snapshot_n_exists() {
          return $ret
 }
 
+#Check for the status of snapshot for a volume
+#Arg1 : <Snap Name>
+function snapshot_status()
+{
+    local snap=$1;
+
+    #TODO: Right now just fetches the status of the single snap volume.
+    #When snapshot will have multiple snap volumes, should have a
+    #cummulative logic for status
+    $CLI_1 snapshot info $snap | grep "Status" | sed 's/.*: //';
+}
+
+
 # TODO: Cleanup code duplication
 function volinfo_field()
 {
@@ -287,4 +318,3 @@ function volume_exists() {
                 return 0
         fi
 }
-
